@@ -1,0 +1,33 @@
+{
+  "name": "markdown-dialect-ial",
+  "version": "0.0.1",
+  "description": "Obsidian plugin development environment for Markdown Dialect IAL.",
+  "main": "main.js",
+  "scripts": {
+    "build": "tsc --noEmit && node esbuild.config.mjs",
+    "dev": "node esbuild.config.mjs --watch",
+    "lint": "eslint main.ts --max-warnings=0",
+    "lint:fix": "eslint main.ts --fix --max-warnings=0",
+    "version:patch": "node scripts/bump-patch-version.mjs",
+    "version:minor": "node scripts/bump-minor-version.mjs",
+    "version:major": "node scripts/bump-major-version.mjs"
+  },
+  "keywords": [
+    "obsidian",
+    "plugin",
+    "markdown",
+    "ial"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@typescript-eslint/parser": "^8.57.2",
+    "@types/node": "^20.16.5",
+    "esbuild": "^0.23.1",
+    "eslint": "^9.39.4",
+    "eslint-plugin-obsidianmd": "^0.1.9",
+    "obsidian": "latest",
+    "tslib": "^2.7.0",
+    "typescript": "^5.5.4"
+  }
+}
