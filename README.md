@@ -1,4 +1,4 @@
-# obsidian_markdown_diarect_ial
+# Markdown Dialect IAL
 
 Obsidian Markdown Dialect – IAL adds Pandoc-style Inline Attribute Lists to Obsidian, enabling custom IDs, classes, and attributes directly in Markdown.
 

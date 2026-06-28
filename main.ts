@@ -839,7 +839,7 @@ class MarkdownDialectIALSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    new Setting(containerEl).setName("Pandoc IAL settings").setHeading();
+    new Setting(containerEl).setName("Pandoc IAL").setHeading();
 
     new Setting(containerEl)
       .setName("Enable filter on save")

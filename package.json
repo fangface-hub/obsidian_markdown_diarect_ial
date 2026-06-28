@@ -1,6 +1,6 @@
 {
   "name": "markdown-dialect-ial",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Obsidian plugin development environment for Markdown Dialect IAL.",
   "main": "main.js",
   "scripts": {
