@@ -1,10 +1,9 @@
 {
-	"id": "obsidian-markdown-dialect-ial",
-	"name": "Markdown Dialect – IAL",
-	"version": "1.0.0",
-	"minAppVersion": "1.4.0",
-	"description": "Adds Pandoc-style Inline Attribute Lists (IAL) to Obsidian, enabling custom IDs, classes, and key–value attributes on headings and other Markdown elements.",
-	"author": "fangface",
-	"authorUrl": "https://github.com/fangface-hub",
-	"isDesktopOnly": false
+  "id": "markdown-dialect-ial",
+  "name": "Markdown Dialect IAL",
+  "version": "0.0.1",
+  "minAppVersion": "1.5.0",
+  "description": "Adds Pandoc-style Inline Attribute Lists to Obsidian Markdown.",
+  "author": "fangface",
+  "isDesktopOnly": false
 }
