@@ -33,8 +33,7 @@ var DEFAULT_SETTINGS = {
   enableOnSave: true,
   allowId: true,
   allowClass: true,
-  allowKeyValue: true,
-  allowOther: false
+  allowKeyValue: true
 };
 function splitIALTokens(content) {
   const tokens = [];
@@ -78,11 +77,11 @@ function shouldKeepToken(token, settings) {
     const eqIndex = token.indexOf("=");
     const key = token.slice(0, eqIndex).trim();
     if (!IAL_KEY_RE.test(key)) {
-      return settings.allowOther;
+      return false;
     }
     return settings.allowKeyValue;
   }
-  return settings.allowOther;
+  return false;
 }
 function isIALToken(token) {
   if (IAL_ID_RE.test(token)) {
@@ -132,8 +131,7 @@ function unquote(value) {
 function parseIAL(raw, settings) {
   const parsed = {
     classes: [],
-    attrs: [],
-    others: []
+    attrs: []
   };
   const tokens = splitIALTokens(raw);
   for (const token of tokens) {
@@ -160,9 +158,6 @@ function parseIAL(raw, settings) {
       if (settings.allowKeyValue) {
         const key = token.slice(0, eqIndex).trim();
         if (!IAL_KEY_RE.test(key)) {
-          if (settings.allowOther) {
-            parsed.others.push(token);
-          }
           continue;
         }
         const value = unquote(token.slice(eqIndex + 1).trim());
@@ -171,9 +166,6 @@ function parseIAL(raw, settings) {
         }
       }
       continue;
-    }
-    if (settings.allowOther) {
-      parsed.others.push(token);
     }
   }
   return parsed;
@@ -250,7 +242,13 @@ function processTrailingIALOnElement(element, settings) {
     return;
   }
   applyIALToElement(element, parsed);
-  lastText.nodeValue = lastText.nodeValue.slice(0, match.index).replace(/\s+$/, "");
+  const cleanedText = lastText.nodeValue.slice(0, match.index).replace(/\s+$/, "");
+  lastText.nodeValue = cleanedText;
+  if (/^h[1-6]$/i.test(element.tagName) && element.hasAttribute("data-heading")) {
+    const heading = element.getAttribute("data-heading") ?? "";
+    const cleanedHeading = heading.replace(/\s*\{([^{}\n]+)\}\s*$/, "").trimEnd();
+    element.setAttribute("data-heading", cleanedHeading);
+  }
 }
 function processStandaloneIALParagraph(root, settings) {
   const paragraphs = root.querySelectorAll("p");
@@ -302,6 +300,31 @@ function getRenderableId(parsed) {
   }
   return null;
 }
+function getRenderableClasses(parsed) {
+  const classes = [...parsed.classes];
+  for (const attr of parsed.attrs) {
+    if (attr.key.toLowerCase() !== "class") {
+      continue;
+    }
+    classes.push(...attr.value.split(/\s+/).filter(Boolean));
+  }
+  return [...new Set(classes)];
+}
+function getRenderableAttributes(parsed) {
+  const attrs = {};
+  for (const attr of parsed.attrs) {
+    const key = attr.key.trim();
+    if (!key) {
+      continue;
+    }
+    const lowerKey = key.toLowerCase();
+    if (lowerKey === "id" || lowerKey === "class") {
+      continue;
+    }
+    attrs[key] = attr.value;
+  }
+  return attrs;
+}
 function isLineInSelection(view, lineFrom, lineTo) {
   return view.state.selection.ranges.some((range) => {
     return range.from <= lineTo && range.to >= lineFrom;
@@ -320,14 +343,21 @@ function buildLivePreviewIALDecorations(view, settings) {
           const parsed = parseIAL(match[1].trim(), settings);
           if (hasRenderableIAL(parsed)) {
             const resolvedId = getRenderableId(parsed);
+            const resolvedClasses = getRenderableClasses(parsed);
+            const lineAttributes = {
+              "data-md-ial-id": "true",
+              ...getRenderableAttributes(parsed)
+            };
             if (resolvedId) {
-              builder.add(line.from, line.from, import_view.Decoration.line({
-                attributes: {
-                  id: resolvedId,
-                  "data-md-ial-id": "true"
-                }
-              }));
+              lineAttributes.id = resolvedId;
             }
+            const lineDecorationSpec = {
+              attributes: lineAttributes
+            };
+            if (resolvedClasses.length > 0) {
+              lineDecorationSpec.class = resolvedClasses.join(" ");
+            }
+            builder.add(line.from, line.from, import_view.Decoration.line(lineDecorationSpec));
             if (!isLineInSelection(view, line.from, line.to)) {
               const hideFrom = line.from + match.index;
               builder.add(hideFrom, line.to, import_view.Decoration.replace({}));
@@ -658,12 +688,6 @@ var MarkdownDialectIALSettingTab = class extends import_obsidian.PluginSettingTa
     new import_obsidian.Setting(containerEl).setName("Allow key=value").setDesc("Keep Pandoc IAL key/value tokens.").addToggle((toggle) => {
       toggle.setValue(this.plugin.settings.allowKeyValue).onChange(async (value) => {
         this.plugin.settings.allowKeyValue = value;
-        await this.plugin.saveSettings();
-      });
-    });
-    new import_obsidian.Setting(containerEl).setName("Allow other tokens").setDesc("Keep unknown IAL tokens that are not id/class/key=value.").addToggle((toggle) => {
-      toggle.setValue(this.plugin.settings.allowOther).onChange(async (value) => {
-        this.plugin.settings.allowOther = value;
         await this.plugin.saveSettings();
       });
     });

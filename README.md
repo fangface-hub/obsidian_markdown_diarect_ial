@@ -9,7 +9,6 @@ Obsidian Markdown Dialect – IAL adds Pandoc-style Inline Attribute Lists to Ob
   - id (`#id`)
   - class (`.class`)
   - key/value (`key=value`)
-  - other tokens
 - Can auto-apply IAL filters on save.
 - Includes a command: `Apply IAL filters to active file`.
 

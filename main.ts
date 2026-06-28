@@ -1,14 +1,14 @@
 import { RangeSetBuilder } from "@codemirror/state";
 import { Decoration, DecorationSet, EditorView, ViewPlugin, ViewUpdate } from "@codemirror/view";
 import {
-  App,
-  MarkdownView,
-  Notice,
-  Plugin,
-  PluginSettingTab,
-  Setting,
-  TFile,
-  editorLivePreviewField
+    App,
+    MarkdownView,
+    Notice,
+    Plugin,
+    PluginSettingTab,
+    Setting,
+    TFile,
+    editorLivePreviewField
 } from "obsidian";
 
 interface IALSettings {
@@ -16,14 +16,12 @@ interface IALSettings {
   allowId: boolean;
   allowClass: boolean;
   allowKeyValue: boolean;
-  allowOther: boolean;
 }
 
 interface ParsedIAL {
   id?: string;
   classes: string[];
   attrs: Array<{ key: string; value: string }>;
-  others: string[];
 }
 
 const IAL_ID_RE = /^#[A-Za-z][\w:-]*$/;
@@ -34,8 +32,7 @@ const DEFAULT_SETTINGS: IALSettings = {
   enableOnSave: true,
   allowId: true,
   allowClass: true,
-  allowKeyValue: true,
-  allowOther: false
+  allowKeyValue: true
 };
 
 function splitIALTokens(content: string): string[] {
@@ -90,12 +87,12 @@ function shouldKeepToken(token: string, settings: IALSettings): boolean {
     const eqIndex = token.indexOf("=");
     const key = token.slice(0, eqIndex).trim();
     if (!IAL_KEY_RE.test(key)) {
-      return settings.allowOther;
+      return false;
     }
     return settings.allowKeyValue;
   }
 
-  return settings.allowOther;
+  return false;
 }
 
 function isIALToken(token: string): boolean {
@@ -159,8 +156,7 @@ function unquote(value: string): string {
 function parseIAL(raw: string, settings: IALSettings): ParsedIAL {
   const parsed: ParsedIAL = {
     classes: [],
-    attrs: [],
-    others: []
+    attrs: []
   };
 
   const tokens = splitIALTokens(raw);
@@ -190,9 +186,6 @@ function parseIAL(raw: string, settings: IALSettings): ParsedIAL {
       if (settings.allowKeyValue) {
         const key = token.slice(0, eqIndex).trim();
         if (!IAL_KEY_RE.test(key)) {
-          if (settings.allowOther) {
-            parsed.others.push(token);
-          }
           continue;
         }
         const value = unquote(token.slice(eqIndex + 1).trim());
@@ -201,10 +194,6 @@ function parseIAL(raw: string, settings: IALSettings): ParsedIAL {
         }
       }
       continue;
-    }
-
-    if (settings.allowOther) {
-      parsed.others.push(token);
     }
   }
 
@@ -297,7 +286,16 @@ function processTrailingIALOnElement(element: HTMLElement, settings: IALSettings
   }
 
   applyIALToElement(element, parsed);
-  lastText.nodeValue = lastText.nodeValue.slice(0, match.index).replace(/\s+$/, "");
+  const cleanedText = lastText.nodeValue.slice(0, match.index).replace(/\s+$/, "");
+  lastText.nodeValue = cleanedText;
+
+  // Obsidian uses data-heading for heading metadata in Reading View.
+  // Keep it aligned with the visible text after removing trailing IAL.
+  if (/^h[1-6]$/i.test(element.tagName) && element.hasAttribute("data-heading")) {
+    const heading = element.getAttribute("data-heading") ?? "";
+    const cleanedHeading = heading.replace(/\s*\{([^{}\n]+)\}\s*$/, "").trimEnd();
+    element.setAttribute("data-heading", cleanedHeading);
+  }
 }
 
 function processStandaloneIALParagraph(root: HTMLElement, settings: IALSettings): void {
@@ -363,6 +361,40 @@ function getRenderableId(parsed: ParsedIAL): string | null {
   return null;
 }
 
+function getRenderableClasses(parsed: ParsedIAL): string[] {
+  const classes: string[] = [...parsed.classes];
+
+  for (const attr of parsed.attrs) {
+    if (attr.key.toLowerCase() !== "class") {
+      continue;
+    }
+
+    classes.push(...attr.value.split(/\s+/).filter(Boolean));
+  }
+
+  return [...new Set(classes)];
+}
+
+function getRenderableAttributes(parsed: ParsedIAL): Record<string, string> {
+  const attrs: Record<string, string> = {};
+
+  for (const attr of parsed.attrs) {
+    const key = attr.key.trim();
+    if (!key) {
+      continue;
+    }
+
+    const lowerKey = key.toLowerCase();
+    if (lowerKey === "id" || lowerKey === "class") {
+      continue;
+    }
+
+    attrs[key] = attr.value;
+  }
+
+  return attrs;
+}
+
 function isLineInSelection(view: EditorView, lineFrom: number, lineTo: number): boolean {
   return view.state.selection.ranges.some((range) => {
     return range.from <= lineTo && range.to >= lineFrom;
@@ -383,14 +415,28 @@ function buildLivePreviewIALDecorations(view: EditorView, settings: IALSettings)
           const parsed = parseIAL(match[1].trim(), settings);
           if (hasRenderableIAL(parsed)) {
             const resolvedId = getRenderableId(parsed);
+            const resolvedClasses = getRenderableClasses(parsed);
+            const lineAttributes: Record<string, string> = {
+              "data-md-ial-id": "true",
+              ...getRenderableAttributes(parsed)
+            };
+
             if (resolvedId) {
-              builder.add(line.from, line.from, Decoration.line({
-                attributes: {
-                  id: resolvedId,
-                  "data-md-ial-id": "true"
-                }
-              }));
+              lineAttributes.id = resolvedId;
             }
+
+            const lineDecorationSpec: {
+              attributes: Record<string, string>;
+              class?: string;
+            } = {
+              attributes: lineAttributes
+            };
+
+            if (resolvedClasses.length > 0) {
+              lineDecorationSpec.class = resolvedClasses.join(" ");
+            }
+
+            builder.add(line.from, line.from, Decoration.line(lineDecorationSpec));
 
             // Keep IAL visible while the cursor/selection is on this line so it remains editable.
             if (!isLineInSelection(view, line.from, line.to)) {
@@ -831,16 +877,6 @@ class MarkdownDialectIALSettingTab extends PluginSettingTab {
       .addToggle((toggle) => {
         toggle.setValue(this.plugin.settings.allowKeyValue).onChange(async (value) => {
           this.plugin.settings.allowKeyValue = value;
-          await this.plugin.saveSettings();
-        });
-      });
-
-    new Setting(containerEl)
-      .setName("Allow other tokens")
-      .setDesc("Keep unknown IAL tokens that are not id/class/key=value.")
-      .addToggle((toggle) => {
-        toggle.setValue(this.plugin.settings.allowOther).onChange(async (value) => {
-          this.plugin.settings.allowOther = value;
           await this.plugin.saveSettings();
         });
       });
