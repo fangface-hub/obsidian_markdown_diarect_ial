@@ -221,7 +221,7 @@ function applyIALToElement(target, parsed) {
   }
 }
 function findLastTextNode(root) {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const walker = root.doc.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   let last = null;
   let node = walker.nextNode();
   while (node) {
@@ -272,7 +272,7 @@ function processStandaloneIALParagraph(root, settings) {
     if (target.tagName.toLowerCase() === "br") {
       target = target.previousElementSibling;
     }
-    if (!target) {
+    if (!target || !target.instanceOf(HTMLElement)) {
       return;
     }
     if (!isEligibleBlockTarget(target)) {
@@ -285,7 +285,9 @@ function processStandaloneIALParagraph(root, settings) {
 function applyPandocIALToRenderedDOM(root, settings) {
   const selectors = "h1, h2, h3, h4, h5, h6, p, li, blockquote";
   root.querySelectorAll(selectors).forEach((node) => {
-    processTrailingIALOnElement(node, settings);
+    if (node.instanceOf(HTMLElement)) {
+      processTrailingIALOnElement(node, settings);
+    }
   });
   processStandaloneIALParagraph(root, settings);
 }
@@ -356,7 +358,10 @@ var MarkdownDialectIALPlugin = class extends import_obsidian.Plugin {
     this.processingFiles = /* @__PURE__ */ new Set();
     this.restoreOpenLinkText = null;
   }
-  async onload() {
+  onload() {
+    void this.initialize();
+  }
+  async initialize() {
     await this.loadSettings();
     this.addSettingTab(new MarkdownDialectIALSettingTab(this.app, this));
     this.addCommand({
@@ -412,7 +417,7 @@ var MarkdownDialectIALPlugin = class extends import_obsidian.Plugin {
     this.installHashLinkCaptureHandlers();
     this.patchOpenLinkTextForCustomIds();
   }
-  async onunload() {
+  onunload() {
     this.processingFiles.clear();
     this.restoreOpenLinkText?.();
     this.restoreOpenLinkText = null;
@@ -436,9 +441,10 @@ var MarkdownDialectIALPlugin = class extends import_obsidian.Plugin {
   }
   async loadSettings() {
     const loaded = await this.loadData();
+    const loadedSettings = loaded && typeof loaded === "object" ? loaded : {};
     this.settings = {
       ...DEFAULT_SETTINGS,
-      ...loaded
+      ...loadedSettings
     };
   }
   async saveSettings() {
@@ -446,7 +452,9 @@ var MarkdownDialectIALPlugin = class extends import_obsidian.Plugin {
   }
   installHashLinkCaptureHandlers() {
     const handler = (event) => {
-      this.handleInDocumentHashLink(event);
+      if (event instanceof MouseEvent) {
+        this.handleInDocumentHashLink(event);
+      }
     };
     const container = this.app.workspace.containerEl;
     container.addEventListener("pointerdown", handler, true);
@@ -461,12 +469,17 @@ var MarkdownDialectIALPlugin = class extends import_obsidian.Plugin {
   attachHashLinkHandlersToElement(root) {
     const links = root.querySelectorAll("a[href^='#'], a.internal-link[data-href^='#']");
     links.forEach((link) => {
+      if (!link.instanceOf(HTMLAnchorElement)) {
+        return;
+      }
       const anchor = link;
       if (anchor.dataset.mdIalHashHandled === "true") {
         return;
       }
       const handler = (event) => {
-        this.handleInDocumentHashLink(event);
+        if (event instanceof MouseEvent) {
+          this.handleInDocumentHashLink(event);
+        }
       };
       anchor.addEventListener("mousedown", handler, true);
       anchor.addEventListener("click", handler, true);
@@ -499,7 +512,7 @@ var MarkdownDialectIALPlugin = class extends import_obsidian.Plugin {
     const selector = `#${escapeCss(rawId)}`;
     const activeMarkdownView = this.app.workspace.getActiveViewOfType(import_obsidian.MarkdownView);
     const localRoot = anchor.closest(".markdown-source-view.mod-cm6") ?? anchor.closest(".markdown-reading-view") ?? anchor.closest(".workspace-leaf-content");
-    const destination = localRoot?.querySelector(selector) ?? activeMarkdownView?.containerEl.querySelector(selector) ?? this.app.workspace.containerEl.querySelector(selector) ?? document.getElementById(rawId);
+    const destination = localRoot?.querySelector(selector) ?? activeMarkdownView?.containerEl.querySelector(selector) ?? this.app.workspace.containerEl.querySelector(selector) ?? activeDocument.getElementById(rawId);
     if (!destination) {
       return false;
     }
@@ -571,7 +584,7 @@ var MarkdownDialectIALPlugin = class extends import_obsidian.Plugin {
     const selector = `#${escapeCss(id)}`;
     for (let i = 0; i < 10; i += 1) {
       const activeMarkdownView = this.app.workspace.getActiveViewOfType(import_obsidian.MarkdownView);
-      const destination = activeMarkdownView?.containerEl.querySelector(selector) ?? this.app.workspace.containerEl.querySelector(selector) ?? document.getElementById(id);
+      const destination = activeMarkdownView?.containerEl.querySelector(selector) ?? this.app.workspace.containerEl.querySelector(selector) ?? activeDocument.getElementById(id);
       if (destination) {
         const scrollContainer = destination.closest(".cm-scroller");
         if (scrollContainer) {
@@ -591,14 +604,17 @@ var MarkdownDialectIALPlugin = class extends import_obsidian.Plugin {
   findHashAnchorFromEvent(event) {
     const path = typeof event.composedPath === "function" ? event.composedPath() : [];
     for (const node of path) {
-      if (!(node instanceof HTMLElement)) {
+      if (!(node instanceof Node)) {
         continue;
       }
-      if (node instanceof HTMLAnchorElement) {
+      if (node.instanceOf(HTMLAnchorElement)) {
         const href = node.getAttribute("data-href") ?? node.getAttribute("href") ?? "";
         if (href.startsWith("#")) {
           return node;
         }
+      }
+      if (!node.instanceOf(Element)) {
+        continue;
       }
       const closest = node.closest("a[href^='#'], a.internal-link[data-href^='#']");
       if (closest) {
@@ -606,7 +622,7 @@ var MarkdownDialectIALPlugin = class extends import_obsidian.Plugin {
       }
     }
     const target = event.target;
-    if (target instanceof HTMLElement) {
+    if (target instanceof Node && target.instanceOf(Element)) {
       return target.closest("a[href^='#'], a.internal-link[data-href^='#']");
     }
     return null;
@@ -620,7 +636,7 @@ var MarkdownDialectIALSettingTab = class extends import_obsidian.PluginSettingTa
   display() {
     const { containerEl } = this;
     containerEl.empty();
-    containerEl.createEl("h2", { text: "Pandoc IAL settings" });
+    new import_obsidian.Setting(containerEl).setName("Pandoc IAL settings").setHeading();
     new import_obsidian.Setting(containerEl).setName("Enable filter on save").setDesc("Apply IAL item filters automatically when Markdown files are saved.").addToggle((toggle) => {
       toggle.setValue(this.plugin.settings.enableOnSave).onChange(async (value) => {
         this.plugin.settings.enableOnSave = value;

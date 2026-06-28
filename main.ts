@@ -1,14 +1,14 @@
 import { RangeSetBuilder } from "@codemirror/state";
 import { Decoration, DecorationSet, EditorView, ViewPlugin, ViewUpdate } from "@codemirror/view";
 import {
-    App,
-    MarkdownView,
-    Notice,
-    Plugin,
-    PluginSettingTab,
-    Setting,
-    TFile,
-    editorLivePreviewField
+  App,
+  MarkdownView,
+  Notice,
+  Plugin,
+  PluginSettingTab,
+  Setting,
+  TFile,
+  editorLivePreviewField
 } from "obsidian";
 
 interface IALSettings {
@@ -261,7 +261,7 @@ function applyIALToElement(target: HTMLElement, parsed: ParsedIAL): void {
 }
 
 function findLastTextNode(root: HTMLElement): Text | null {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const walker = root.doc.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   let last: Text | null = null;
   let node = walker.nextNode();
 
@@ -315,17 +315,17 @@ function processStandaloneIALParagraph(root: HTMLElement, settings: IALSettings)
       return;
     }
 
-    let target = paragraph.previousElementSibling as HTMLElement | null;
+    let target = paragraph.previousElementSibling;
     if (!target) {
       return;
     }
 
     // If previous sibling is an empty line wrapper, walk backward once more.
     if (target.tagName.toLowerCase() === "br") {
-      target = target.previousElementSibling as HTMLElement | null;
+      target = target.previousElementSibling;
     }
 
-    if (!target) {
+    if (!target || !target.instanceOf(HTMLElement)) {
       return;
     }
 
@@ -341,7 +341,9 @@ function processStandaloneIALParagraph(root: HTMLElement, settings: IALSettings)
 function applyPandocIALToRenderedDOM(root: HTMLElement, settings: IALSettings): void {
   const selectors = "h1, h2, h3, h4, h5, h6, p, li, blockquote";
   root.querySelectorAll(selectors).forEach((node) => {
-    processTrailingIALOnElement(node as HTMLElement, settings);
+    if (node.instanceOf(HTMLElement)) {
+      processTrailingIALOnElement(node, settings);
+    }
   });
 
   processStandaloneIALParagraph(root, settings);
@@ -423,7 +425,11 @@ export default class MarkdownDialectIALPlugin extends Plugin {
   private processingFiles = new Set<string>();
   private restoreOpenLinkText: (() => void) | null = null;
 
-  async onload(): Promise<void> {
+  onload(): void {
+    void this.initialize();
+  }
+
+  private async initialize(): Promise<void> {
     await this.loadSettings();
 
     this.addSettingTab(new MarkdownDialectIALSettingTab(this.app, this));
@@ -494,7 +500,7 @@ export default class MarkdownDialectIALPlugin extends Plugin {
     this.patchOpenLinkTextForCustomIds();
   }
 
-  async onunload(): Promise<void> {
+  onunload(): void {
     this.processingFiles.clear();
     this.restoreOpenLinkText?.();
     this.restoreOpenLinkText = null;
@@ -522,10 +528,13 @@ export default class MarkdownDialectIALPlugin extends Plugin {
   }
 
   private async loadSettings(): Promise<void> {
-    const loaded = await this.loadData();
+    const loaded: unknown = await this.loadData();
+    const loadedSettings = loaded && typeof loaded === "object"
+      ? (loaded as Partial<IALSettings>)
+      : {};
     this.settings = {
       ...DEFAULT_SETTINGS,
-      ...(loaded as Partial<IALSettings> | null)
+      ...loadedSettings
     };
   }
 
@@ -535,7 +544,9 @@ export default class MarkdownDialectIALPlugin extends Plugin {
 
   private installHashLinkCaptureHandlers(): void {
     const handler = (event: Event): void => {
-      this.handleInDocumentHashLink(event as MouseEvent);
+      if (event instanceof MouseEvent) {
+        this.handleInDocumentHashLink(event);
+      }
     };
 
     const container = this.app.workspace.containerEl;
@@ -553,13 +564,19 @@ export default class MarkdownDialectIALPlugin extends Plugin {
   private attachHashLinkHandlersToElement(root: HTMLElement): void {
     const links = root.querySelectorAll("a[href^='#'], a.internal-link[data-href^='#']");
     links.forEach((link) => {
-      const anchor = link as HTMLAnchorElement;
+      if (!link.instanceOf(HTMLAnchorElement)) {
+        return;
+      }
+
+      const anchor = link;
       if (anchor.dataset.mdIalHashHandled === "true") {
         return;
       }
 
       const handler = (event: Event): void => {
-        this.handleInDocumentHashLink(event as MouseEvent);
+        if (event instanceof MouseEvent) {
+          this.handleInDocumentHashLink(event);
+        }
       };
 
       anchor.addEventListener("mousedown", handler, true);
@@ -599,15 +616,15 @@ export default class MarkdownDialectIALPlugin extends Plugin {
     const selector = `#${escapeCss(rawId)}`;
     const activeMarkdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
     const localRoot =
-      (anchor.closest(".markdown-source-view.mod-cm6") as HTMLElement | null) ??
-      (anchor.closest(".markdown-reading-view") as HTMLElement | null) ??
-      (anchor.closest(".workspace-leaf-content") as HTMLElement | null);
+      anchor.closest<HTMLElement>(".markdown-source-view.mod-cm6") ??
+      anchor.closest<HTMLElement>(".markdown-reading-view") ??
+      anchor.closest<HTMLElement>(".workspace-leaf-content");
 
     const destination =
       localRoot?.querySelector<HTMLElement>(selector) ??
       activeMarkdownView?.containerEl.querySelector<HTMLElement>(selector) ??
       this.app.workspace.containerEl.querySelector<HTMLElement>(selector) ??
-      document.getElementById(rawId);
+      activeDocument.getElementById(rawId);
 
     if (!destination) {
       return false;
@@ -617,7 +634,7 @@ export default class MarkdownDialectIALPlugin extends Plugin {
     event.stopPropagation();
     event.stopImmediatePropagation();
 
-    const scrollContainer = destination.closest(".cm-scroller") as HTMLElement | null;
+    const scrollContainer = destination.closest<HTMLElement>(".cm-scroller");
     if (scrollContainer) {
       const top = destination.offsetTop - 24;
       scrollContainer.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
@@ -710,10 +727,10 @@ export default class MarkdownDialectIALPlugin extends Plugin {
       const destination =
         activeMarkdownView?.containerEl.querySelector<HTMLElement>(selector) ??
         this.app.workspace.containerEl.querySelector<HTMLElement>(selector) ??
-        document.getElementById(id);
+        activeDocument.getElementById(id);
 
       if (destination) {
-        const scrollContainer = destination.closest(".cm-scroller") as HTMLElement | null;
+        const scrollContainer = destination.closest<HTMLElement>(".cm-scroller");
         if (scrollContainer) {
           const top = destination.offsetTop - 24;
           scrollContainer.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
@@ -734,26 +751,30 @@ export default class MarkdownDialectIALPlugin extends Plugin {
   private findHashAnchorFromEvent(event: MouseEvent): HTMLAnchorElement | null {
     const path = typeof event.composedPath === "function" ? event.composedPath() : [];
     for (const node of path) {
-      if (!(node instanceof HTMLElement)) {
+      if (!(node instanceof Node)) {
         continue;
       }
 
-      if (node instanceof HTMLAnchorElement) {
+      if (node.instanceOf(HTMLAnchorElement)) {
         const href = node.getAttribute("data-href") ?? node.getAttribute("href") ?? "";
         if (href.startsWith("#")) {
           return node;
         }
       }
 
-      const closest = node.closest("a[href^='#'], a.internal-link[data-href^='#']") as HTMLAnchorElement | null;
+      if (!node.instanceOf(Element)) {
+        continue;
+      }
+
+      const closest = node.closest<HTMLAnchorElement>("a[href^='#'], a.internal-link[data-href^='#']");
       if (closest) {
         return closest;
       }
     }
 
     const target = event.target;
-    if (target instanceof HTMLElement) {
-      return target.closest("a[href^='#'], a.internal-link[data-href^='#']") as HTMLAnchorElement | null;
+    if (target instanceof Node && target.instanceOf(Element)) {
+      return target.closest<HTMLAnchorElement>("a[href^='#'], a.internal-link[data-href^='#']");
     }
 
     return null;
@@ -772,7 +793,7 @@ class MarkdownDialectIALSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    containerEl.createEl("h2", { text: "Pandoc IAL settings" });
+    new Setting(containerEl).setName("Pandoc IAL settings").setHeading();
 
     new Setting(containerEl)
       .setName("Enable filter on save")

@@ -21,13 +21,17 @@
   "author": "",
   "license": "MIT",
   "devDependencies": {
-    "@typescript-eslint/parser": "^8.57.2",
     "@types/node": "^20.16.5",
+    "@typescript-eslint/parser": "^8.57.2",
     "esbuild": "^0.23.1",
     "eslint": "^9.39.4",
     "eslint-plugin-obsidianmd": "^0.1.9",
     "obsidian": "latest",
     "tslib": "^2.7.0",
     "typescript": "^5.5.4"
+  },
+  "dependencies": {
+    "@codemirror/state": "^6.7.0",
+    "@codemirror/view": "^6.43.4"
   }
 }

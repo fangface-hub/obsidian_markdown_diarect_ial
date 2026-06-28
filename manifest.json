@@ -3,7 +3,7 @@
   "name": "Markdown Dialect IAL",
   "version": "0.0.1",
   "minAppVersion": "1.5.0",
-  "description": "Adds Pandoc-style Inline Attribute Lists to Obsidian Markdown.",
+    "description": "Adds Pandoc-style Inline Attribute Lists to notes.",
   "author": "fangface",
   "isDesktopOnly": false
 }
